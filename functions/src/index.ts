@@ -42,6 +42,3 @@ app.get("/:address", async (req: Express.Request, res: Express.Response) => {
 });
 
 exports.app = functions.https.onRequest(app);
-
-// https://console.firebase.google.com/project/faucet-test-usdc/app/0xd4dB78F13Bc28c84211f2D8795B1aAd6c24e56bB
-// curl https://us-central1-faucet-test-usdc.cloudfunctions.net/0xd4dB78F13Bc28c84211f2D8795B1aAd6c24e56bB
