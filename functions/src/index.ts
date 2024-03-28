@@ -1,44 +1,87 @@
 import * as functions from "firebase-functions/v2";
 import * as Express from "express";
 import { ethers } from "ethers";
-require("dotenv").config();
 import { usdcContract } from "../usdc";
+import { check, validationResult } from "express-validator";
+import * as dotenv from "dotenv";
 
 const app = Express();
 
-const networks = {
-  opSepolia: "https://optimism-sepolia.infura.io/v3/",
-};
+async function checkBalance(
+  address: string,
+  contract: ethers.Contract
+): Promise<boolean> {
+  const balance = await contract.balanceOf(address);
+  return balance < BigInt(10000 * 1e6);
+}
 
-const apiKey = process.env.INFURA_API_KEY!;
-const network = networks.opSepolia;
+async function sendEther(address: string, wallet: ethers.Wallet) {
+  const tx = await wallet.sendTransaction({
+    to: address,
+    value: ethers.utils.parseEther("0.001"),
+  });
 
-const configureProvider = () => {
-  return new ethers.providers.JsonRpcProvider(`${network}${apiKey}`);
-};
+  return tx;
+}
 
-app.get("/:address", async (req: Express.Request, res: Express.Response) => {
-  try {
-    const provider = configureProvider();
-    const toAddress = req.params.address;
-    const privateKey = process.env.PRIVATE_KEY!;
-    const amount = ethers.utils.parseUnits("10000", 6); // 10000 USDC (6 decimals)
+async function claimFaucet(address: string) {
+  dotenv.config();
+  const amount = ethers.utils.parseUnits("10000", 6); // 10000 USDC (6 decimals)
 
-    const wallet = new ethers.Wallet(privateKey, provider);
-    let walletSigner = wallet.connect(provider);
+  const apiKey = process.env.INFURA_API_KEY!;
+  const provider = new ethers.providers.JsonRpcProvider(
+    `https://optimism-sepolia.infura.io/v3/${apiKey}`
+  );
+  const privateKey = process.env.PRIVATE_KEY!;
 
-    const contract = new ethers.Contract(
-      usdcContract.address,
-      usdcContract.abi,
-      walletSigner
-    );
+  const wallet = new ethers.Wallet(privateKey, provider);
+  const walletSigner = wallet.connect(provider);
 
-    await contract.mint(toAddress, amount).then((tx: any) => {
-      res.send(`Transaction hash: ${tx.hash}\n`);
-    });
-  } catch (error: any) {
-    res.status(500).send(`Error: ${error.message}\n`);
+  const contract = new ethers.Contract(
+    usdcContract.address,
+    usdcContract.abi,
+    walletSigner
+  );
+
+  const isClaimable = await checkBalance(address, contract);
+
+  if (!isClaimable) {
+    return "User already has enough USDC";
   }
-});
+
+  const responsse = await contract
+    .mint(address, amount)
+    .then(async (tx: any) => {
+      await tx.wait();
+
+      await sendEther(address, wallet);
+      return tx;
+    })
+    .catch((error: any) => {
+      return error;
+    });
+
+  return responsse;
+}
+
+app.get(
+  "/api/usdc",
+  check("address").custom((value) => {
+    return ethers.utils.isAddress(value);
+  }),
+  async (req: Express.Request, res: Express.Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    try {
+      const response = await claimFaucet(req.query.address as string);
+      return res.status(200).json({ response });
+    } catch (error) {
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
 
 exports.app = functions.https.onRequest(app);

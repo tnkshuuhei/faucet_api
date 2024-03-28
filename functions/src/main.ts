@@ -2,7 +2,9 @@ require("dotenv").config();
 
 const getFromApi = async (address: string) => {
   try {
-    const response = await fetch(`${process.env.FAUCET_ENDPOINT}/${address}`);
+    const response = await fetch(
+      `${process.env.FAUCET_ENDPOINT}/api/usdc?address=${address}`
+    );
     if (!response.ok) {
       throw new Error(`Error: ${response.status}`);
     }
@@ -13,4 +15,4 @@ const getFromApi = async (address: string) => {
   }
 };
 
-getFromApi("0xd4dB78F13Bc28c84211f2D8795B1aAd6c24e56bB");
+getFromApi("0x92596E9a5355bB298F116817eC1B7beD37E3013b");
